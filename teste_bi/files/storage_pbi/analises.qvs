@@ -1,0 +1,119 @@
+﻿///$tab Main
+SET ThousandSep='.';
+SET DecimalSep=',';
+SET MoneyThousandSep='.';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='R$#.##0,00;-R$#.##0,00';
+SET TimeFormat='hh:mm:ss';
+SET DateFormat='DD/MM/YYYY';
+SET TimestampFormat='DD/MM/YYYY hh:mm:ss[.fff]';
+SET FirstWeekDay=6;
+SET BrokenWeeks=1;
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='pt-BR';
+SET MonthNames='jan;fev;mar;abr;mai;jun;jul;ago;set;out;nov;dez';
+SET LongMonthNames='janeiro;fevereiro;março;abril;maio;junho;julho;agosto;setembro;outubro;novembro;dezembro';
+SET DayNames='seg;ter;qua;qui;sex;sáb;dom';
+SET LongDayNames='segunda-feira;terça-feira;quarta-feira;quinta-feira;sexta-feira;sábado;domingo';
+///$tab import
+empresas:
+LOAD id, 
+     cd_cep, 
+     cd_cnpj, 
+     cd_natureza_juridica, 
+     de_classif_natureza_juridica, 
+     de_natureza_juridica, 
+     de_situacao, 
+     dt_abertura, 
+     fl_matriz, 
+     nm_bairro, 
+     nm_logradouro, 
+     nm_municipio, 
+     nm_razao_social, 
+     nu_logradouro, 
+     sg_uf
+FROM
+[..\..\files\dataMirrors\empresas.qvd]
+(qvd);
+
+empresasCalc:
+LOAD cd_cnpj, 
+     vl_latitude, 
+     vl_longitude, 
+     vl_total_veiculos_antt, 
+     vl_total_veiculos_leves, 
+     vl_total_veiculos_pesados, 
+     faixa, 
+     fl_optante_simples, 
+     qt_filial, 
+     fl_optante_simei, 
+     optante_simples, 
+     optante_simei, 
+     registrado_antt, 
+     de_saude_tributaria, 
+     de_nivel_atividade
+FROM
+[..\..\files\dataTransformed\empresasCalcTransformed.qvd]
+(qvd);
+
+setoresRamos:
+LOAD [Ramo de Atividade], 
+     Divisões, 
+     [(DIVISÃO - 2digitos CNAE)], 
+     F4, 
+     F5, 
+     F6, 
+     F7
+FROM
+[..\..\files\dataMirrors\setoresRamos.qvd]
+(qvd);
+
+cnae:
+LOAD cd_cnpj, 
+     nu_ordem, 
+     cd_ramo_atividade, 
+     de_ramo_atividade 
+FROM
+[..\..\files\dataTransformed\cnaeTransformed.qvd]
+(qvd);
+
+///$tab Calendario
+QuartersMap:  
+MAPPING LOAD   
+rowno() as Month,  
+Ceil (rowno()/3) & 'º Trimestre' as Quarter  
+AUTOGENERATE (12);  
+  
+Temp:  
+Load  
+   min(dt_abertura) as minDate,  
+   max(dt_abertura) as maxDate  
+Resident empresas;  
+  
+Let varMinDate = Num(Peek('minDate', 0, 'Temp'));  
+Let varMaxDate = Num(Peek('maxDate', 0, 'Temp'));  
+DROP Table Temp;  
+  
+TempCalendar:  
+LOAD  
+	$(varMinDate) + Iterno()-1 As Num,  
+	Date($(varMinDate) + IterNo() - 1) as TempDate  
+	AutoGenerate 1 While $(varMinDate) + IterNo() -1 <= $(varMaxDate);  
+  
+CALENDÁRIO:  
+Load  
+	 TempDate AS dt_abertura,
+	 week(TempDate) As Semana,  
+	 Year(TempDate) As Ano,  
+	 Month(TempDate) As Mes,  
+	 Day(TempDate) As Dia,  
+	 YeartoDate(TempDate)*-1 as CurYTDFlag,  
+	 YeartoDate(TempDate,-1)*-1 as LastYTDFlag,  
+	 date(monthstart(TempDate), 'MMM-YYYY') as MesAno, 
+	 ApplyMap('QuartersMap', month(TempDate), Null()) as Trimestre,  
+	 Week(weekstart(TempDate)) & '-' & WeekYear(TempDate) as SemanaAno,  
+	 WeekDay(TempDate) as DiaSemana  
+Resident TempCalendar  
+Order By TempDate ASC;  
+Drop Table TempCalendar;  
